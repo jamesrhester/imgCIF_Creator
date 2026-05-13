@@ -7,12 +7,14 @@ Orignal author: Dr. James Hester, ANSTO, Lucas Heights, Australia
 import math
 import re
 import sys
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
 import h5py
 import numpy as np
 from dxtbx.format.FormatSMV import FormatSMV
+from dxtbx.format.FormatCBFMini import FormatCBFMini
 from dxtbx.model import Detector, ExperimentList, MultiAxisGoniometer, Panel
 from scipy.spatial.transform import Rotation as R
 
@@ -697,7 +699,36 @@ def encode_scan_step(template, val):
         return f"{val:0{width}}."
     return re.sub(r"(#+)\.", repl, template)
 
+def create_binary_part(imageset, frame_no):
+    """ Re-encode binary image information into CBF standard
+    """
 
+    # Write a full miniCBF and take the binary part
+    
+    FormatCBFMini.as_file(
+            imageset.get_detector(),
+            imageset.get_beam(),
+            imageset.get_goniometer(),
+            imageset.get_scan()[frame_no],
+            imageset.get_raw_data(frame_no)[0],
+            "scratch.cbf",
+        )
+
+    # Now extract the binary part
+
+    delimiter = bytes("--CIF-BINARY-FORMAT-SECTION--", "utf8")
+    with open("scratch.cbf","rb") as f:
+        full_contents = f.read()
+
+    pieces = full_contents.split(delimiter)
+    if len(pieces) != 3:
+        return None
+
+    # get loop header
+    
+    array_struct = pieces[0].rpartition(b"loop_")[-1]
+    return b"loop_\n" + array_struct + delimiter + pieces[1] + delimiter + pieces[2]
+        
 def make_cif(expts, outf, data_name, locations, doi=None,
              file_type=None, overload_value=None, frame_limit=np.inf):
     outf.write(CIF_HEADER.format(name=data_name))
@@ -721,3 +752,57 @@ def make_cif(expts, outf, data_name, locations, doi=None,
         expts, locations, file_type
     )
     write_external_locations(ext_info, outf, frame_limit)
+
+def make_cbf(expts: ExperimentList, outstem, overload_value=None):
+    """ Write a full CBF for every image in `expts`. `outstem` is an
+        output stem to which _<scan>_<frame>.cbf will be appended.
+    """
+    # Get the images
+
+    imagesets = expts.imagesets()
+
+    # Create the constant part
+
+    outf = io.StringIO()
+
+    # Write header
+    
+    outf.write(CIF_HEADER.format(name="frame"))
+
+    write_beam_info(expts, outf)
+    g_ax, d_ax, s_ax = get_axes_info(expts)
+    write_axis_info(g_ax, d_ax, s_ax, outf)
+    
+    write_array_info('DETECTOR',
+                     len(list(expts[0].detector.iter_panels())),
+                     s_ax, d_ax, outf, overload_value)
+    
+    write_scan_info(expts, g_ax, d_ax, outf)
+
+    const_part = bytes(outf.getvalue(), "utf8")
+    outf.close()
+    
+    for scan_no in range(len(expts)):
+        
+    # Have to create a separate file for every frame
+
+        for frame_no in range(len(imagesets[scan_no])):
+
+            bb = create_binary_part(imagesets[scan_no], frame_no)
+ 
+            # Create filename and open
+        
+            filename = f"{outstem}_{scan_no}_{frame_no}.cbf".format()
+            outf = open(filename, "wb")
+
+            outf.write(const_part)
+
+            # Output details of this particular frame
+            
+            outf.write(bb)
+            outf.close()
+
+            if frame_no > 1:
+                break   #for debugging
+            
+    print("Finished outputting CBF frames")
