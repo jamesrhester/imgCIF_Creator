@@ -441,9 +441,14 @@ def write_beam_info(expts: ExperimentList, outf):
         assert e.beam.get_wavelength() == wl, f"{e.beam.get_wavelength()} != {wl}"
 
     cif_block = f"""
-_diffrn_radiation_wavelength.id    1
-_diffrn_radiation_wavelength.value {wl}
+_diffrn.id                         DIFFRN
+_diffrn_radiation.diffrn_id        DIFFRN
+_diffrn_radiation.wavelength_id    WAVELENGTH1
 _diffrn_radiation.type             xray
+
+_diffrn_radiation_wavelength.id    WAVELENGTH1
+_diffrn_radiation_wavelength.value {wl}
+_diffrn_radiation_wavelength.wavelength {wl}   #older equivalent
 
 """
     outf.write(cif_block)
@@ -497,7 +502,21 @@ def write_axis_info(g_axes, d_axes, s_axes, outf):
                      ax[0], ax[1], ax[2], origin[0], origin[1], origin[2]))
 
     outf.write(cif_loop("_axis", fields, rows))
+    outf.write(""" #Boilerplate for cbflib
+loop_
+_diffrn_measurement.diffrn_id
+_diffrn_measurement.id
+DIFFRN GONIOMETER
 
+loop_
+_diffrn_measurement_axis.measurement_id
+_diffrn_measurement_axis.axis_id
+    """
+               )
+    for k in g_axes.keys():
+        outf.write(f"GONIOMETER {k}\n")
+
+    outf.write("\n")
 
 def write_array_info(det_name, n_elms, s_axes, d_axes, outf, overload_value=None):
     """ Output information about the layout of the pixels. We assume two axes,
@@ -687,6 +706,36 @@ def write_external_locations(ext_info, outf, scan_frame_limit=np.inf):
 
     outf.write(cif_loop("_array_data_external_data", fields, rows))
 
+def write_this_frame_info(expts, g_axes, d_axes, frame_no, scan_no, outf):
+    """
+    Write info pertaining to one particular frame.
+    """
+    # Exposure and integration times
+    int_time = expts[scan_no].scan.get_exposure_times()[frame_no]
+    outf.write(f"""loop_
+_diffrn_scan_frame.frame_id
+_diffrn_scan_frame.frame_number
+_diffrn_scan_frame.integration_time
+_diffrn_scan_frame.scan_id
+FRAME{frame_no+1} {frame_no+1} {int_time} SCAN.{scan_no+1}
+
+""")
+
+    # Info for this frame
+    axis_names = expts[scan_no].goniometer.get_names()
+    axis_angles = expts[scan_no].goniometer.get_angles()
+    rows = []
+    for n, a in zip(axis_names, axis_angles):
+        rows.append((f"FRAME{frame_no+1}", n, f"{a}", "."))
+
+    for k, v in d_axes.items():
+        if k == "Trans":
+            rows.append((f"FRAME{frame_no+1}", k, ".", v['vals'][scan_no]))
+        else:
+            rows.append((f"FRAME{frame_no+1}", k, v['vals'][scan_no], "."))
+    
+    outf.write(cif_loop("_diffrn_scan_frame_axis", ["frame_id", "axis_id", "angle", "displacement"], rows))
+        
 
 def encode_scan_step(template, val):
     """ Encode the file number into a scan template. The template has a sequence
@@ -724,10 +773,9 @@ def create_binary_part(imageset, frame_no):
     if len(pieces) != 3:
         return None
 
-    # get loop header
+    # get loop header; none at present
     
-    array_struct = pieces[0].rpartition(b"loop_")[-1]
-    return b"loop_\n" + array_struct + delimiter + pieces[1] + delimiter + pieces[2]
+    return b"_array_data.data\n;\n" + delimiter + pieces[1] + delimiter + pieces[2]
         
 def make_cif(expts, outf, data_name, locations, doi=None,
              file_type=None, overload_value=None, frame_limit=np.inf):
@@ -792,17 +840,25 @@ def make_cbf(expts: ExperimentList, outstem, overload_value=None):
  
             # Create filename and open
         
-            filename = f"{outstem}_{scan_no}_{frame_no}.cbf".format()
+            template = f"{outstem}_{scan_no+1}_######.cbf".format()
+            filename = encode_scan_step(template, frame_no+1)
+
             outf = open(filename, "wb")
 
             outf.write(const_part)
 
             # Output details of this particular frame
+
+            soutf = io.StringIO()   #convert to bytes at the end
             
+            write_this_frame_info(expts, g_ax, d_ax, frame_no, scan_no, soutf)
+            outf.write(bytes(soutf.getvalue(), "utf8"))
+
+            # Write the binary part
             outf.write(bb)
             outf.close()
 
-            if frame_no > 1:
+            if frame_no > 1: #only during testing, remove later
                 break   #for debugging
             
     print("Finished outputting CBF frames")
