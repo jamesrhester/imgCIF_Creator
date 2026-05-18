@@ -8,6 +8,7 @@ import math
 import re
 import sys
 import io
+from time import gmtime, strftime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -712,12 +713,23 @@ def write_this_frame_info(expts, g_axes, d_axes, frame_no, scan_no, outf):
     """
     # Exposure and integration times
     int_time = expts[scan_no].scan.get_exposure_times()[frame_no]
+    epoch = expts[scan_no].scan.get_image_epoch(frame_no + 1)
+    timestamp = strftime("%Y-%m-%dT%H:%M:%S", gmtime(epoch))
+    
     outf.write(f"""loop_
 _diffrn_scan_frame.frame_id
 _diffrn_scan_frame.frame_number
 _diffrn_scan_frame.integration_time
+_diffrn_scan_frame.date
 _diffrn_scan_frame.scan_id
-FRAME{frame_no+1} {frame_no+1} {int_time} SCAN.{scan_no+1}
+FRAME{frame_no+1} {frame_no+1} {int_time} {timestamp} SCAN.{scan_no+1}
+
+loop_
+_diffrn_data_frame.id
+_diffrn_data_frame.detector_element_id
+_diffrn_data_frame.array_id
+_diffrn_data_frame.binary_id
+FRAME{frame_no+1} ELEMENT1 1 1
 
 """)
 
