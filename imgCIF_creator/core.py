@@ -737,8 +737,13 @@ FRAME{frame_no+1} ELEMENT1 1 1
     axis_names = expts[scan_no].goniometer.get_names()
     axis_angles = expts[scan_no].goniometer.get_angles()
     rows = []
-    for n, a in zip(axis_names, axis_angles):
-        rows.append((f"FRAME{frame_no+1}", n, f"{a}", "."))
+    scan_ax = expts[scan_no].goniometer.get_scan_axis()
+    osc_angle = expts[scan_no].scan.get_image_oscillation(frame_no + 1)[0]
+    for num, (n, a) in enumerate(zip(axis_names, axis_angles)):
+        if num == scan_ax:
+           rows.append((f"FRAME{frame_no+1}", n, f"{osc_angle}", "."))
+        else:
+           rows.append((f"FRAME{frame_no+1}", n, f"{a}", "."))
 
     for k, v in d_axes.items():
         if k == "Trans":
@@ -813,9 +818,9 @@ def make_cif(expts, outf, data_name, locations, doi=None,
     )
     write_external_locations(ext_info, outf, frame_limit)
 
-def make_cbf(expts: ExperimentList, outstem, overload_value=None):
-    """ Write a full CBF for every image in `expts`. `outstem` is an
-        output stem to which _<scan>_<frame>.cbf will be appended.
+def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit = 5):
+    """ Write a full CBF for every image in `expts`. `outtempl` is an
+        output template with '#' in place of frame numbers.
     """
     # Get the images
 
@@ -852,8 +857,7 @@ def make_cbf(expts: ExperimentList, outstem, overload_value=None):
  
             # Create filename and open
         
-            template = f"{outstem}_{scan_no+1}_######.cbf".format()
-            filename = encode_scan_step(template, frame_no+1)
+            filename = encode_scan_step(outtempl, frame_no+1)
 
             outf = open(filename, "wb")
 
@@ -870,7 +874,7 @@ def make_cbf(expts: ExperimentList, outstem, overload_value=None):
             outf.write(bb)
             outf.close()
 
-            if frame_no > 1: #only during testing, remove later
-                break   #for debugging
+            if frame_no > frame_limit:
+                break
             
-    print("Finished outputting CBF frames")
+    print(f"Finished outputting CBF frames to {outtempl}")

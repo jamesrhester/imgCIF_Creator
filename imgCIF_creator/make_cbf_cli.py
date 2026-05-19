@@ -1,4 +1,5 @@
 import sys
+import os
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -7,20 +8,37 @@ from dxtbx.model.experiment_list import ExperimentListFactory
 
 from .core import make_cbf
 
+def create_new_template(old_template):
+    """
+    Derive a new directory for CBF files
+    """
+    old_path, old_fn = os.path.split(old_template)
+    one_dir_missing = os.path.split(old_path)[0]
+    new_dir = os.path.join(one_dir_missing, "CBF")
+    i = 0
+    while os.path.isdir(new_dir):
+        i += 1
+        new_dir = os.path.join(one_dir_missing, f"CBF{i}")
+
+    os.mkdir(new_dir)
+    no_ext = os.path.splitext(old_fn)
+    new_fn = no_ext[0] + ".cbf"
+    return os.path.join(new_dir, new_fn)
+
 def parse_commandline(argv):
 
     ap = ArgumentParser(prog="make_cbf")
     ap.add_argument(
-        "input_fn",
+        "input_dir",
         type=Path,
         nargs='+',
-        help="Experiment description in JSON format as produced by DIALS "
-             "(typically '<input_fn>.expt') "
+        help="Directory containing files to convert"
     )
     ap.add_argument(
         '--overload-value',
-        help="Pixels with this value or above in the image data will be considered invalid"
+        help="Overload value to include in CBF file"
     )
+    
     args = ap.parse_args(argv)
 
     return args
@@ -31,21 +49,15 @@ def main(argv=None):
         argv = sys.argv[1:]
 
     args = parse_commandline(argv)
-    out_fn = args.output_file
-    if not out_fn.suffix:
-        out_fn = out_fn.with_suffix('.cif')
 
-    frame_limit = np.inf if (args.frames_limit is None) else args.frames_limit
+    expts = ExperimentListFactory.from_filenames(args.input_dir)
+    fullpath = expts.imagesets()[0].get_template()
 
-    if args.input_fn[0].suffix == '.expt':
-        assert len(args.input_fn) == 1, "Please pass only 1 .expt file"
-        expts = ExperimentListFactory.from_json_file(
-            args.input_fn[0], check_format=True
-        )
+    # Create our own template in sibling "CBF" directory
 
-    with out_fn.open('w') as outf:
-        make_cbf(expts, outf, out_fn.stem, locations,
-                 overload_value=args.overload_value, frame_limit=frame_limit)
+    out_fn = create_new_template(fullpath)
+    
+    make_cbf(expts, out_fn, overload_value=args.overload_value, frame_limit=5)
 
 
 if __name__ == '__main__':
