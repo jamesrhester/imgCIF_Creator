@@ -17,6 +17,7 @@ import numpy as np
 from dxtbx.format.FormatSMV import FormatSMV
 from dxtbx.format.FormatCBFMini import FormatCBFMini
 from dxtbx.model import Detector, ExperimentList, MultiAxisGoniometer, Panel
+from dxtbx.model import KappaGoniometer
 from scipy.spatial.transform import Rotation as R
 
 CIF_HEADER = """\
@@ -739,11 +740,21 @@ FRAME{frame_no+1} ELEMENT1 1 1
 
 """)
 
-    # Info for this frame
-    axis_names = expts[scan_no].goniometer.get_names()
-    axis_angles = expts[scan_no].goniometer.get_angles()
+    # Info for this frame (TODO: Kappa goniometer)
+    if isinstance(expts[scan_no].goniometer, MultiAxisGoniometer):
+        axis_names = expts[scan_no].goniometer.get_names()
+        axis_angles = expts[scan_no].goniometer.get_angles()
+        scan_ax = expts[scan_no].goniometer.get_scan_axis()
+    elif isinstance(expts[scan_no].goniometer, KappaGoniometer):
+        axis_names = ["todo", "todo", "todo"]
+        axis_angles = [0, 0, 0]
+        scan_ax = 0
+    else:
+        axis_names = [GONIO_DEFAULT_AXIS]
+        axis_angles = [-1000] # should never be used 
+        scan_ax = 0
+
     rows = []
-    scan_ax = expts[scan_no].goniometer.get_scan_axis()
     osc_angle = expts[scan_no].scan.get_image_oscillation(frame_no + 1)[0]
     for num, (n, a) in enumerate(zip(axis_names, axis_angles)):
         if num == scan_ax:

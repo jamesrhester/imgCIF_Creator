@@ -27,7 +27,12 @@ def create_new_template(old_template):
 
 def parse_commandline(argv):
 
-    ap = ArgumentParser(prog="make_cbf")
+    description = """\
+    Convert a directory of image frames in any format recognised by dxtbx into
+    CBF files. The files will be placed in a new directory "CBF" at the same
+    level as the directory within which the frames are found.
+    """
+    ap = ArgumentParser(prog="make_cbf", description=description)
     ap.add_argument(
         "input_dir",
         type=Path,
