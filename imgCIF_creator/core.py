@@ -7,6 +7,7 @@ Orignal author: Dr. James Hester, ANSTO, Lucas Heights, Australia
 import math
 import re
 import sys
+import os
 import io
 from time import gmtime, strftime
 from dataclasses import dataclass
@@ -520,22 +521,7 @@ def write_axis_info(g_axes, d_axes, s_axes, outf):
                      ax[0], ax[1], ax[2], origin[0], origin[1], origin[2]))
 
     outf.write(cif_loop("_axis", fields, rows))
-    outf.write(""" #Boilerplate for cbflib
-loop_
-_diffrn_measurement.diffrn_id
-_diffrn_measurement.id
-DIFFRN GONIOMETER
-
-loop_
-_diffrn_measurement_axis.measurement_id
-_diffrn_measurement_axis.axis_id
-    """
-               )
-    for k in g_axes.keys():
-        outf.write(f"GONIOMETER {k}\n")
-
-    outf.write("\n")
-
+ 
 def write_array_info(det_name, n_elms, s_axes, d_axes, outf, overload_value=None):
     """ Output information about the layout of the pixels. We assume two axes,
         with the first one the fast direction, and that there is no dead space
@@ -724,6 +710,35 @@ def write_external_locations(ext_info, outf, scan_frame_limit=np.inf):
 
     outf.write(cif_loop("_array_data_external_data", fields, rows))
 
+def write_measurement_info(expt, outf):
+    """
+    Write goniometer measurement strategy. This may change from
+    scan to scan so is called for each frame
+    """
+    outf.write(""" #Boilerplate for cbflib
+loop_
+_diffrn_measurement.diffrn_id
+_diffrn_measurement.id
+DIFFRN GONIOMETER
+
+loop_
+_diffrn_measurement_axis.measurement_id
+_diffrn_measurement_axis.axis_id
+    """
+               )
+
+    if isinstance(expt.goniometer, MultiAxisGoniometer):
+        scan_axis = expt.goniometer.get_scan_axis()
+        axis_name = expt.goniometer.get_names()[scan_axis]
+    elif isinstance(expt.goniometer, KappaGoniometer):
+        axis_name = "TODO"
+    else:
+        axis_name = GONIO_DEFAULT_AXIS
+        
+    outf.write(f"GONIOMETER {axis_name}\n")
+
+    outf.write("\n")
+
 def write_this_frame_info(expts, g_axes, d_axes, frame_no, scan_no, outf):
     """
     Write info pertaining to one particular frame.
@@ -845,7 +860,20 @@ def make_cif(expts, outf, data_name, locations, doi=None,
     )
     write_external_locations(ext_info, outf, frame_limit)
 
-def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit = 5):
+def create_new_template(old_template):
+    """
+    Derive a new directory for CBF files
+    """
+    old_path, old_fn = os.path.split(old_template)
+    one_dir_missing = os.path.split(old_path)[0]
+    new_dir = os.path.join(one_dir_missing, "CBF")
+    if not os.path.isdir(new_dir):
+        os.mkdir(new_dir)
+    no_ext = os.path.splitext(old_fn)
+    new_fn = no_ext[0] + ".cbf"
+    return os.path.join(new_dir, new_fn)
+
+def make_cbf(expts: ExperimentList, overload_value=None, frame_limit = 5):
     """ Write a full CBF for every image in `expts`. `outtempl` is an
         output template with '#' in place of frame numbers.
     """
@@ -875,8 +903,13 @@ def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit =
     outf.close()
     
     for scan_no in range(len(expts)):
+
+        # New template for each scan in CBF directory
+
+        fullpath = imagesets[scan_no].get_template()
+        outtempl = create_new_template(fullpath)
         
-    # Have to create a separate file for every frame
+        # Have to create a separate file for every frame
 
         for frame_no in range(len(imagesets[scan_no])):
 
@@ -896,7 +929,8 @@ def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit =
             # Output details of this particular frame
 
             soutf = io.StringIO()   #convert to bytes at the end
-            
+
+            write_measurement_info(expts[scan_no], soutf)
             write_this_frame_info(expts, g_ax, d_ax, frame_no, scan_no, soutf)
             outf.write(bytes(soutf.getvalue(), "utf8"))
 
