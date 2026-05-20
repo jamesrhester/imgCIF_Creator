@@ -38,7 +38,12 @@ def parse_commandline(argv):
         '--overload-value',
         help="Overload value to include in CBF file"
     )
-    
+    ap.add_argument(
+        '--frame-limit',
+        type=int,
+        default=None,
+        help="Convert no more than this many frames."
+        )
     args = ap.parse_args(argv)
 
     return args
@@ -57,7 +62,7 @@ def main(argv=None):
 
     out_fn = create_new_template(fullpath)
     
-    make_cbf(expts, out_fn, overload_value=args.overload_value, frame_limit=5)
+    make_cbf(expts, out_fn, overload_value=args.overload_value, frame_limit=args.frame_limit)
 
 
 if __name__ == '__main__':

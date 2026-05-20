@@ -26,6 +26,12 @@ CIF_HEADER = """\
 data_{name}
 """
 
+CBF_HEADER = """\
+###CBF
+# CBF created using dxtbx tools
+data_{name}
+"""
+
 GONIO_DEFAULT_AXIS = 'Omega'  # Used when goniometer has 1 nameless axis
 
 #=== Utilities ===
@@ -832,7 +838,7 @@ def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit =
 
     # Write header
     
-    outf.write(CIF_HEADER.format(name="frame"))
+    outf.write(CBF_HEADER.format(name="frame"))
 
     write_beam_info(expts, outf)
     g_ax, d_ax, s_ax = get_axes_info(expts)
@@ -853,6 +859,9 @@ def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit =
 
         for frame_no in range(len(imagesets[scan_no])):
 
+            if frame_limit != None and frame_no >= frame_limit:
+                break
+            
             bb = create_binary_part(imagesets[scan_no], frame_no)
  
             # Create filename and open
@@ -874,7 +883,5 @@ def make_cbf(expts: ExperimentList, outtempl, overload_value=None, frame_limit =
             outf.write(bb)
             outf.close()
 
-            if frame_no > frame_limit:
-                break
             
     print(f"Finished outputting CBF frames to {outtempl}")
