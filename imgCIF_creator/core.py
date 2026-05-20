@@ -18,6 +18,7 @@ from dxtbx.format.FormatSMV import FormatSMV
 from dxtbx.format.FormatCBFMini import FormatCBFMini
 from dxtbx.model import Detector, ExperimentList, MultiAxisGoniometer, Panel
 from dxtbx.model import KappaGoniometer
+from dxtbx.model.beam import Probe
 from scipy.spatial.transform import Rotation as R
 
 CIF_HEADER = """\
@@ -447,12 +448,21 @@ def write_beam_info(expts: ExperimentList, outf):
     wl = expts[0].beam.get_wavelength()
     for e in expts[1:]:
         assert e.beam.get_wavelength() == wl, f"{e.beam.get_wavelength()} != {wl}"
+    pr = expts[0].beam.get_probe()
+    if pr == Probe.xray:
+        probe = "x-ray"
+    elif pr == Probe.electron:
+        probe = "electron"
+    elif pr == Probe.neutron:
+        probe = "neutron"
+    else:  # These are all the values in dxtbx 3.27. ImgCIF also allows 'gamma'
+        raise ValueError(f"Unexpected probe type {pr}")
 
     cif_block = f"""
 _diffrn.id                         DIFFRN
 _diffrn_radiation.diffrn_id        DIFFRN
 _diffrn_radiation.wavelength_id    WAVELENGTH1
-_diffrn_radiation.type             xray
+_diffrn_radiation.probe            {probe}
 
 _diffrn_radiation_wavelength.id    WAVELENGTH1
 _diffrn_radiation_wavelength.value {wl}
