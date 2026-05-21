@@ -946,11 +946,10 @@ def make_cbf(expts: ExperimentList, frame_limit = 5):
 
             # Output details of this particular frame
 
-            soutf = io.StringIO()   #convert to bytes at the end
+            outf_txt = io.TextIOWrapper(outf, 'utf-8', write_through=True)
 
-            write_measurement_info(expts[scan_no], soutf)
-            write_this_frame_info(expts, g_ax, d_ax, frame_no, scan_no, soutf)
-            outf.write(bytes(soutf.getvalue(), "utf8"))
+            write_measurement_info(expts[scan_no], outf_txt)
+            write_this_frame_info(expts, g_ax, d_ax, frame_no, scan_no, outf_txt)
 
             # Write the binary part
             outf.write(bb)
