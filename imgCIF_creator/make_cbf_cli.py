@@ -22,10 +22,6 @@ def parse_commandline(argv):
         help="Directory containing files to convert"
     )
     ap.add_argument(
-        '--overload-value',
-        help="Overload value to include in CBF file"
-    )
-    ap.add_argument(
         '--frame-limit',
         type=int,
         default=None,
@@ -44,7 +40,7 @@ def main(argv=None):
 
     expts = ExperimentListFactory.from_filenames(args.input_dir)
 
-    make_cbf(expts, overload_value=args.overload_value, frame_limit=args.frame_limit)
+    make_cbf(expts, frame_limit=args.frame_limit)
 
 if __name__ == '__main__':
     main()

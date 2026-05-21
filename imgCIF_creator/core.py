@@ -191,7 +191,7 @@ def get_two_theta(detector: Detector, axis_rotation):
     if np.linalg.norm(p_onrm - [0,0,-1]) < 0.0001:
         return 0.0, None
 
-    rot_obj, *_ = R.align_vectors(np.array([0,0,-1]), p_onrm)
+    rot_obj, *_ = R.align_vectors(p_onrm, np.array([0,0,-1]))
     rot_vec = rot_obj.as_rotvec(degrees=True)
     tth_angl = np.linalg.norm(rot_vec)
     tth_axis = rot_vec / tth_angl
@@ -246,6 +246,7 @@ def get_srf_axes(expts: ExperimentList, axis_rotation):
     axis_dict = {}
 
     tth_angl, tth_axis = get_two_theta(d_info, axis_rotation)
+
     for i, panel in enumerate(d_info, start=1):
         fast = axis_rotation.apply(panel.get_fast_axis())
         slow = axis_rotation.apply(panel.get_slow_axis())
@@ -253,7 +254,7 @@ def get_srf_axes(expts: ExperimentList, axis_rotation):
 
         if tth_axis is not None:
             # rotation matrix from 2theta angle-axis (reverse angle)
-            rot_vec = tth_angl * tth_axis  # exp. result in separate test, but may need *-1
+            rot_vec = -1 * tth_angl * tth_axis  # Unrotate
             rot_mat = R.from_rotvec(rot_vec, degrees=True).as_matrix()
             # apply to (rotated) detector base axes in order to 'unrotate'
             fast = np.around(np.dot(rot_mat, fast), decimals=3)
@@ -522,7 +523,8 @@ def write_axis_info(g_axes, d_axes, s_axes, outf):
 
     outf.write(cif_loop("_axis", fields, rows))
  
-def write_array_info(det_name, n_elms, s_axes, d_axes, outf, overload_value=None):
+def write_array_info(det_name, n_elms, s_axes, d_axes, outf,
+                     overload_value=None, gain_value=1.0):
     """ Output information about the layout of the pixels. We assume two axes,
         with the first one the fast direction, and that there is no dead space
         between pixels.
@@ -559,13 +561,15 @@ _diffrn_detector.diffrn_id DIFFRN
          for i, v in enumerate(s_axes.values(), start=1)]
     ))
 
+    outf.write(f"_array_intensities.gain        {gain_value}\n")
     if overload_value is not None:
         outf.write(f"_array_intensities.overload    {overload_value}\n\n")
 
 
-
-def write_scan_info(expts: ExperimentList, g_axes, d_axes, outf):
-    """ Output scan axis information
+def write_scan_info(expts: ExperimentList, g_axes, d_axes, outf, only_scan = None):
+    """ Output scan axis information. If `only_scan` is not None, only output
+    information for that scan. In a full CBF, Dials assumes information for only
+    a single scan is presented.
     """
     fields = [
         "scan_id", "axis_id", "displacement_start", "displacement_increment",
@@ -575,6 +579,9 @@ def write_scan_info(expts: ExperimentList, g_axes, d_axes, outf):
     fmt = lambda v: format(v, '.2f')
 
     for s_ix, expt in enumerate(expts):
+
+        if only_scan != None and s_ix != only_scan:
+            continue
 
         scan_id = f'SCAN.{s_ix+1}'
 
@@ -873,9 +880,8 @@ def create_new_template(old_template):
     new_fn = no_ext[0] + ".cbf"
     return os.path.join(new_dir, new_fn)
 
-def make_cbf(expts: ExperimentList, overload_value=None, frame_limit = 5):
-    """ Write a full CBF for every image in `expts`. `outtempl` is an
-        output template with '#' in place of frame numbers.
+def make_cbf(expts: ExperimentList, frame_limit = 5):
+    """ Write a full CBF for every image in `expts`.
     """
     # Get the images
 
@@ -892,13 +898,16 @@ def make_cbf(expts: ExperimentList, overload_value=None, frame_limit = 5):
     write_beam_info(expts, outf)
     g_ax, d_ax, s_ax = get_axes_info(expts)
     write_axis_info(g_ax, d_ax, s_ax, outf)
+
+    # Grab some detector information
+    
+    gain_value = expts[0].detector[0].get_gain()
+    overload_value = expts[0].detector[0].get_trusted_range()[1]
     
     write_array_info('DETECTOR',
                      len(list(expts[0].detector.iter_panels())),
-                     s_ax, d_ax, outf, overload_value)
+                     s_ax, d_ax, outf, overload_value, gain_value)
     
-    write_scan_info(expts, g_ax, d_ax, outf)
-
     const_part = bytes(outf.getvalue(), "utf8")
     outf.close()
     
@@ -908,6 +917,14 @@ def make_cbf(expts: ExperimentList, overload_value=None, frame_limit = 5):
 
         fullpath = imagesets[scan_no].get_template()
         outtempl = create_new_template(fullpath)
+
+        # Only provide information for this scan to get around a
+        # Dials limitation
+
+        outf = io.StringIO()
+        write_scan_info(expts, g_ax, d_ax, outf, only_scan = scan_no)
+        this_scan_info = bytes(outf.getvalue(), "utf8")
+        outf.close()
         
         # Have to create a separate file for every frame
 
@@ -925,6 +942,7 @@ def make_cbf(expts: ExperimentList, overload_value=None, frame_limit = 5):
             outf = open(filename, "wb")
 
             outf.write(const_part)
+            outf.write(this_scan_info)
 
             # Output details of this particular frame
 
